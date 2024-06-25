@@ -6,7 +6,7 @@ import retrofit2.Call;
 import retrofit2.http.Body;
 import retrofit2.http.POST;
 
-public interface CommonService {
+public interface CommonService {//jai jai jai jai jai
 
     @POST("/rest/model/com/mobility/service/CommonService/login")
     Call<LoginResponse> login(@Body LoginRequest loginRequest);
@@ -17,4 +17,5 @@ public interface CommonService {
     Call<LogoutResponse> logout(
             @Body LogoutRequest logoutRequest
     );
+
 }
