@@ -7,27 +7,15 @@ import org.simpleframework.xml.Root;
 @Root(name = "SoftAllocationResponseDetails", strict = false)
 public class LoginResponse {
 
-    @Element(name = "response")
-    private Response response;
-
-    // Getters and Setters
-    public Response getResponse() {
-        return response;
-    }
-
-
-
-    @Root(name = "response", strict = false)
-    public static class Response {
-
-        @Element(name = "JSESSIONID")
+        @Element(name = "JSESSIONID" ,required = false)
         private String JSESSIONID;
 
-        @Element(name = "key")
+        @Element(name = "key" ,required = false)
         private String key;
 
-        @Element(name = "forcePasswordChange")
+        @Element(name = "forcePasswordChange" ,required = false)
         private boolean forcePasswordChange;
+
 
         // Getters and Setters
         public String getJSESSIONID() {
@@ -47,5 +35,6 @@ public class LoginResponse {
         }
 
 
-    }
+
 }
+

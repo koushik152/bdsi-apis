@@ -5,11 +5,12 @@ import com.google.gson.annotations.SerializedName;
 import org.simpleframework.xml.Element;
 import org.simpleframework.xml.Root;
 
-public class LogoutResponse {
-    @SerializedName("is-logged-out")
-    private String isLoggedOut;
+@Root(name = "response", strict = false)
+public  class LogoutResponse {
+    @Element(name ="is-logged-out")
+    private Boolean isLoggedOut;
 
-    public String getIsLoggedOut() {
+    public Boolean getIsLoggedOut() {
         return isLoggedOut;
     }
 }
