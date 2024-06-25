@@ -1,28 +1,32 @@
 package com.example.api_demo;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 
+
+import com.google.gson.Gson;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.xmlpull.v1.XmlPullParser;
-import org.xmlpull.v1.XmlPullParserException;
-import org.xmlpull.v1.XmlPullParserFactory;
 
-import java.io.IOException;
-import java.io.StringReader;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.concurrent.TimeUnit;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.logging.HttpLoggingInterceptor;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSession;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
-import okhttp3.OkHttpClient;
-import okhttp3.ResponseBody;
-import okhttp3.logging.HttpLoggingInterceptor;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
@@ -31,40 +35,39 @@ import retrofit2.converter.gson.GsonConverterFactory;
 import retrofit2.converter.simplexml.SimpleXmlConverterFactory;
 
 public class MainActivity extends AppCompatActivity {
-    private TextView tvResponse;
+    private TextView Response;
     private CommonService commonService;
-    private String cookie = "JSESSIONID=ruaiHRRPFSrUx0xzOXhIUrnkieUyWyf9qtbABZX0.bdsi-stg-use1-app-01-p-stg1-app1"; // Replace with your actual cookie value
-
+    private SharedPreferences sharedPreferences;
+    private static final String PREFS_NAME = "com.example.apidemo.PREFS";
+    private static final String TOKEN_KEY = "m-service-token";
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        Button btnLogin = findViewById(R.id.login);
+        Button btnLogout = findViewById(R.id.logout);
+        Response = findViewById(R.id.response);
 
-        Button btnLogin = findViewById(R.id.btnLogin);
-        Button btnLogout = findViewById(R.id.btnLogout);
-        tvResponse = findViewById(R.id.tvResponse);
+        sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
 
-        // Add logging interceptor to OkHttpClient
-        HttpLoggingInterceptor loggingInterceptor = new HttpLoggingInterceptor();
-        loggingInterceptor.setLevel(HttpLoggingInterceptor.Level.BODY);
+        HttpLoggingInterceptor logging = new HttpLoggingInterceptor();
+        logging.setLevel(HttpLoggingInterceptor.Level.BODY);
 
-        // Create a trust manager that does not validate certificate chains
         TrustManager[] trustAllCerts = new TrustManager[]{
                 new X509TrustManager() {
-                    public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-                        return new java.security.cert.X509Certificate[]{};
-                    }
+                    @Override
+                    public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {}
+                    @Override
+                    public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {}
 
-                    public void checkClientTrusted(java.security.cert.X509Certificate[] certs, String authType) {
-                    }
-
-                    public void checkServerTrusted(java.security.cert.X509Certificate[] certs, String authType) {
+                    @Override
+                    public X509Certificate[] getAcceptedIssuers() {
+                        return new X509Certificate[0];
                     }
                 }
         };
 
         try {
-            // Install the all-trusting trust manager
             SSLContext sslContext = SSLContext.getInstance("SSL");
             sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
 
@@ -80,22 +83,37 @@ public class MainActivity extends AppCompatActivity {
 
             httpClient.connectTimeout(30, TimeUnit.SECONDS);
             httpClient.readTimeout(30, TimeUnit.SECONDS);
-            httpClient.addInterceptor(loggingInterceptor); // Add the logging interceptor
+            httpClient.addInterceptor(logging); // Add the logging interceptor
+
+            httpClient.addInterceptor(chain -> {
+                Request original = chain.request();
+                String token = sharedPreferences.getString(TOKEN_KEY, null);
+                Request.Builder requestBuilder = original.newBuilder()
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "application/json");
+                if (token != null) {
+                    requestBuilder.header("Cookie", "m-service-token=" + token);
+                }
+                Request request = requestBuilder
+                        .method(original.method(), original.body())
+                        .build();
+                return chain.proceed(request);
+            });
 
             Retrofit retrofit = new Retrofit.Builder()
-                    .baseUrl("https://bdsi-stg1-store.pivotree.io")
+                    .baseUrl("https://bdsi-stg1-store.pivotree.io/")
+                    .addConverterFactory(SimpleXmlConverterFactory.create())
                     .client(httpClient.build())
-                    .addConverterFactory(SimpleXmlConverterFactory.create()) // For XML// For JSON
                     .build();
-            commonService = retrofit.create(CommonService.class);
 
+            commonService = retrofit.create(CommonService.class);
             btnLogin.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     performLogin();
                 }
             });
-            btnLogout.setOnClickListener(new View.OnClickListener() {
+            btnLogout.setOnClickListener(new View.OnClickListener() { // Add this block
                 @Override
                 public void onClick(View v) {
                     performLogout();
@@ -106,95 +124,112 @@ public class MainActivity extends AppCompatActivity {
             throw new RuntimeException(e);
         }
     }
+    private void performLogin() {
+        LoginRequest loginRequest = new LoginRequest("json", "DISHAPANDIT.CMP", "India@901");
+        Call<LoginResponse> call = commonService.login(loginRequest);
+        call.enqueue(new Callback<LoginResponse>() {
+            @Override
+            public void onResponse(Call<LoginResponse> call, Response<LoginResponse> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    LoginResponse loginResponse = response.body();
+                    LoginResponse.Response responseBody = loginResponse.getResponse();
+                    String token = responseBody.getJSESSIONID();
+                    SharedPreferences.Editor editor = sharedPreferences.edit();
+                    editor.putString(TOKEN_KEY, token);
+                    editor.apply();
+                    String displayText = "response :" +"  " +"{" + "\n" + "JSESSIONID: " + responseBody.getJSESSIONID() +","+ "\nkey: " + responseBody.getKey() + ","+ "\nforcePasswordChange: " + responseBody.isForcePasswordChange() + "\n"+ "}";
+                    Response.setText(displayText);
+
+                } else {
+                    try {
+                        // Log and display detailed error message
+                        String errorBody = response.errorBody().string();
+                        Response.setText("Request failed: " + errorBody);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        Response.setText("Request failed: Unable to parse error response");
+                    }
+                }
+            }
+
+            @Override
+            public void onFailure(Call<LoginResponse> call, Throwable t) {
+                t.printStackTrace();
+                Response.setText("Request failed: " + t.getMessage());
+            }
+        });
+    }
 
     private void performLogout() {
-        LogoutRequest logoutRequest = new LogoutRequest("false", "KOUSHIK.CMP", "India@123", "json");
-        Call<ResponseBody> call = commonService.logout(cookie, logoutRequest);
-
-        call.enqueue(new Callback<ResponseBody>() {
+        LogoutRequest logoutRequest = new LogoutRequest("false", "DISHAPANDIT.CMP", "India@901", "json");
+        Call<LogoutResponse> call = commonService.logout(logoutRequest);
+        Log.d("LogoutRequest", "Request: " + new Gson().toJson(logoutRequest));
+        call.enqueue(new Callback<LogoutResponse>() {
             @Override
-            public void onResponse(Call<ResponseBody> call, Response<ResponseBody> response) {
+            public void onResponse(Call<LogoutResponse> call, Response<LogoutResponse> response) {
+                Log.d("LogoutResponse", "Response Code: " + response.code()); // Log response code
+                Log.d("LogoutResponseHeaders", "Headers: " + response.headers().toString());
+                Log.d("LogoutResponse", "response success: " + response.isSuccessful());
                 if (response.isSuccessful() && response.body() != null) {
-                    try {
-                        String jsonResponse = response.body().string();
-                        JSONObject jsonObject = new JSONObject(jsonResponse);
-                        String isLoggedOut = jsonObject.optString("is-logged-out");
-                        String displayText = "Is Logged Out: " + isLoggedOut;
-                        tvResponse.setText(displayText);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                        tvResponse.setText("Request failed: Unable to parse JSON response");
-                    }
+                    LogoutResponse logoutResponse = response.body();
+                    Log.d("LogoutResponseBody", "Body: " + new Gson().toJson(logoutResponse));
+                    String displayText = "is-logged-out: " + logoutResponse.getIsLoggedOut();
+                    Response.setText(displayText);
+
+                    SharedPreferences.Editor editor = sharedPreferences.edit();
+                    editor.remove(TOKEN_KEY);
+                    editor.apply();
                 } else {
-                    try {
-                        String errorBody = response.errorBody().string();
-                        tvResponse.setText("Request failed: " + errorBody);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                        tvResponse.setText("Request failed: Unable to parse error response");
-                    }
+                    handleErrorResponse(response);
                 }
             }
-
             @Override
-            public void onFailure(Call<ResponseBody> call, Throwable t) {
+            public void onFailure(Call<LogoutResponse> call, Throwable t) {
                 t.printStackTrace();
-                tvResponse.setText("Request failed: " + t.getMessage());
-            }
-        });
-    }
-    private void performLogin() {
-        LoginRequest loginRequest = new LoginRequest("json", "KOUSHIK.CMP" ,"India@123");
-        Call<ResponseBody> call = commonService.login(loginRequest);
-
-        call.enqueue(new Callback<ResponseBody>() {
-            @Override
-            public void onResponse(Call<ResponseBody> call, Response<ResponseBody> response) {
-                if (response.isSuccessful() && response.body() != null) {
-                    try {
-                        String xmlResponse = response.body().string();
-                        String JSessionID = parseXmlResponse(xmlResponse, "JSESSIONID");
-                        String key = parseXmlResponse(xmlResponse, "key");
-                        String forcePasswordChange = parseXmlResponse(xmlResponse, "forcePasswordChange");
-                        String displayText = "JSession ID: " + JSessionID + "\nKey: " + key + "\nForce Password Change: " + forcePasswordChange;
-                        tvResponse.setText(displayText);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                        tvResponse.setText("Request failed: Unable to parse XML response");
-                    }
-                } else {
-                    try {
-                        String errorBody = response.errorBody().string();
-                        tvResponse.setText("Request failed: " + errorBody);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                        tvResponse.setText("Request failed: Unable to parse error response");
-                    }
-                }
-            }
-
-            @Override
-            public void onFailure(Call<ResponseBody> call, Throwable t) {
-                t.printStackTrace();
-                tvResponse.setText("Request failed: " + t.getMessage());
+                Log.e("LogoutFailure", "Request failed: unable to give response " + t.getMessage(), t);
+                Response.setText("Request failed: unable to give response " + t.getMessage());
             }
         });
     }
 
-    private String parseXmlResponse(String xmlResponse, String tagName) throws XmlPullParserException, IOException {
-        XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
-        factory.setNamespaceAware(true);
-        XmlPullParser parser = factory.newPullParser();
-        parser.setInput(new StringReader(xmlResponse));
-
-        int eventType = parser.getEventType();
-        while (eventType != XmlPullParser.END_DOCUMENT) {
-            if (eventType == XmlPullParser.START_TAG && parser.getName().equals(tagName)) {
-                parser.next();
-                return parser.getText();
+    private void handleErrorResponse(Response<LogoutResponse> response) {
+        try {
+            if (response.errorBody() != null) {
+                String errorBody = response.errorBody().string();
+                Log.e("LogoutError", "Request failed: " + errorBody); // Log error body
+                if (isJson(errorBody)) {
+                    try {
+                        JSONObject errorJson = new JSONObject(errorBody);
+                        String errorMessage = errorJson.optString("error", "Unknown error");
+                        Response.setText("Request failed: " + errorMessage);
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                        Response.setText("Request failed: Unable to parse error response");
+                    }
+                } else {
+                    Response.setText("Request failed with HTML response: " + errorBody);
+                }
+            } else {
+                Log.e("LogoutError", "Request failed with no error body");
+                Response.setText("Request failed: Unknown error");
             }
-            eventType = parser.next();
+        } catch (Exception e) {
+            e.printStackTrace();
+            Log.e("LogoutException", "Request failed: Unable to parse error response", e); // Log exception
+            Response.setText("Request failed: Unable to parse error response");
         }
-        return null;
+
+    }
+    private boolean isJson(String str) {
+        try {
+            new JSONObject(str);
+        } catch (JSONException ex) {
+            try {
+                new JSONArray(str);
+            } catch (JSONException ex1) {
+                return false;
+            }
+        }
+        return true;
     }
 }
